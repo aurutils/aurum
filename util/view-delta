@@ -1,0 +1,32 @@
+#!/bin/bash
+[[ -v AUR_DEBUG ]] && set -o xtrace
+set -o errexit
+shopt -s extglob
+
+# Helper function to take complements of pkgbase arrays
+filter_packages() { grep -Fxvf <(printf '%s\n' "$@") -; }
+
+# Directory with diffs and PKGBUILD subdirs
+cd "${1:-/dev/null}"
+diffs=(@(*.diff|*.log))
+pkgbases=(*/)
+pkgbases=("${pkgbases[@]%/}")
+
+# Show diffs in 2 panes
+if [[ -f ${diffs[0]} ]]; then
+    cat "${diffs[@]}" | delta --diff-so-fancy --paging=always --line-numbers --navigate
+
+    # Remove diffs from remaining targets (new or unchanged dirs)
+    mapfile -t pkgbases < <(
+        printf '%s\n' "${pkgbases[@]}" | filter_packages "${diffs[@]%%.*}")
+fi >&2
+
+# Show remaining targets in a concatenated fashion
+if (( ${#pkgbases[@]} )); then
+    # Only print files in the git repository
+    find -L "${pkgbases[@]}" -prune -exec sh -c 'git -C {} ls-files -z | env -C {} xargs -0r realpath -z' \; |
+        grep -Ezv '.SRCINFO|.gitignore' | xargs -0r bat --paging=always
+fi >&2
+
+# Show an exit prompt
+read -rp $'Press Return to continue or Ctrl+d to abort\n'

@@ -1,0 +1,84 @@
+#!/bin/bash
+[[ -v AUR_DEBUG ]] && set -o xtrace
+set -o errexit
+XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
+XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
+argv0=maid
+
+# default arguments
+build_args=(-R) sync_args=(--format=log)
+
+# default options
+checkdepends=1 use_mirror=0
+
+usage() {
+    echo "usage: $argv0 [-d ARG] [-ufCeM] [--] ARGS..."
+    exit 2
+}
+
+source /usr/share/makepkg/util/message.sh
+source /usr/share/makepkg/util/parseopts.sh
+
+# option parsing
+opt_short='d:ufCeMn'
+opt_long=('repo:' 'upgrades' 'force' 'no-check' 'nocheck' 'continue' 'mirror'
+          'noconfirm' 'no-confirm' 'ignore:')
+
+if ! parseopts "$opt_short" "${opt_long[@]}" -- "$@"; then
+    usage
+fi
+set -- "${OPTRET[@]}"
+
+unset repo_args sync_args
+while true; do
+    case $1 in
+        -d|--repo)
+            shift; repo_args+=(-d "$1") ;;
+        -f|--force)
+            build_args+=(-f); sync_args+=(-f --no-ver-argv) ;;
+        -C|--nocheck|--no-check)
+            build_args+=(-C); sync_args+=(--no-check) ;;
+        -n|--noconfirm|--no-confirm)
+            build_args+=(-n) ;;
+        -e|--continue)
+            sync_args+=(--continue) ;;
+        -u|--upgrades)
+            sync_args+=(-u) ;;
+        --ignore)
+            shift; sync_args+=(--ignore "$1") ;;
+        -M|--mirror)
+            use_mirror=1 ;;
+        --) shift; break ;;
+    esac
+    shift
+done
+
+if (( use_mirror )); then
+    export AURDEST=$XDG_CACHE_HOME/aurutils/sync-mirror
+    export AUR_FETCH_USE_MIRROR=1
+fi
+
+# set up scratch space
+tmp=$(mktemp)
+if [[ ! -v AUR_DEBUG ]]; then
+    trap 'rm -rf "$tmp"' EXIT
+fi
+
+# retrieve local repository information
+{ IFS=: read -r _ db_name
+  IFS=: read -r _ db_root
+  IFS=: read -r _ _
+} < <(aur repo "${repo_args[@]}" --status)
+wait "$!"
+
+# retrieve and inspect sources
+env AUR_PAGER=view-delta AUR_SYNC_USE_NINJA=0 aur sync \
+    --database "$db_name" --root "$db_root" "${sync_args[@]}" --no-build "$@" \
+    --exclude ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix > "$tmp"
+
+# build packages in dependency order
+# XXX: add ninja support
+if [[ -s $tmp ]]; then
+    build_args+=(-d "$db_name" -r "$db_root" -a "$tmp" -U "$USER")
+    build-asroot "${build_args[@]}"
+fi

@@ -1,0 +1,217 @@
+#!/bin/bash
+[[ -v AUR_DEBUG ]] && set -o xtrace
+set -o errexit
+argv0=build-asroot
+startdir=$PWD
+PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+
+# Default options
+makepkg_args=(-L) pactrans_args=() repo_add_args=() checkdepends=1
+
+# Allow to drop permissions for commands as needed (#907)
+as_user() {
+    local USER HOME SHELL
+
+    if [[ $UID == 0 ]] && [[ -v build_user ]]; then
+        # runuser --pty messes up the terminal with AUR_DEBUG set, use setpriv(1)
+        # and replicate the runuser(1) behavior for setting the environment
+        { IFS= read -r USER
+          IFS= read -r HOME
+          IFS= read -r SHELL
+        } < <(getent passwd "$build_user" | awk -F: '{printf("%s\n%s\n%s\n", $1, $6, $7); }')
+
+        # avoid `sudo` calls in build scripts from escalating privileges
+        setpriv --no-new-privs --reuid "$build_user" --regid "$build_user" --init-groups \
+                env USER="$USER" HOME="$HOME" LOGNAME="$USER" SHELL="$SHELL" "$@"
+    else
+        env "$@"
+    fi
+}
+
+# Save transaction so that it can easily be undone later. `pactrans` ignores
+# `provides` or groups, so these are resolved with `pacman -Sp` first.  This
+# implies no provider selection; default targets are always taken.
+# See: https://github.com/andrewgregory/pacutils/issues/63
+get_transaction() {
+    (( ! $# )) && return
+
+    mapfile -t pkgnames < <(
+        pacman -Sp "$@" --print-format '%r/%n'
+    )
+    wait "$!" || return
+
+    LANG=C pacinstall --print-only "${pkgnames[@]}" | awk '$1 == "removing" || $1 == "installing"'
+    return "${PIPESTATUS[0]}"
+}
+
+install_depends() {
+    #global pactrans_args remove_args install_args
+    if ! (( ${#remove_args[@]} + ${#install_args[@]} )); then
+        return
+    fi
+    pacinstall "${pactrans_args[@]}" --as-deps "${install_args[@]}" --remove "${remove_args[@]}"
+}
+
+remove_depends() {
+    #global pactrans_args remove_args install_args
+    if ! (( ${#remove_args[@]} + ${#install_args[@]} )); then
+        return
+    fi
+    pacremove "${pactrans_args[@]}" "${install_args[@]##*/}" --install "${remove_args[@]}"
+}
+
+# Simple option parsing
+unset queue build_user db_name db_root
+orig_argv=("$@")
+
+while getopts :a:U:d:r:fRnC OPT; do
+    case $OPT in
+        a) queue=$OPTARG ;;
+        d) db_name=$OPTARG ;;
+        r) db_root=$OPTARG ;;
+        U) build_user=$OPTARG ;;
+        C) makepkg_args+=(--nocheck); checkdepends=0 ;;
+        f) makepkg_args+=(--force) ;;
+        n) pactrans_args+=(--no-confirm) ;;
+        R) repo_add_args+=(-R) ;;
+        *) printf >&2 '%s: invalid option\n' "$argv0"
+           exit 1;;
+    esac
+done
+shift $(( OPTIND - 1 ))
+
+if [[ ! -v db_name ]] || [[ -z $db_name ]]; then
+    printf >&2 '%s: repository name must be specified\n' "$argv0"
+    exit 1
+
+elif [[ ! -v db_root ]] || [[ ! -d $db_root ]]; then
+    printf >&2 '%s: repository root must point to a directory\n' "$argv0"
+    exit 1
+
+elif [[ ! -v build_user ]]; then
+    printf >&2 '%s: build user not specified\n' "$argv0"
+    exit 1
+
+elif (( $(id -u "$build_user") == 0 )); then
+    printf >&2 '%s: build user is privileged\n' "$argv0"
+    exit 2
+fi
+
+# XXX: only done so that `aur-build-asroot` can be resolved with `aur`,
+# without placing it in the global AUR_EXEC_PATH
+if (( EUID != 0 )); then
+    exec ${AUR_PACMAN_AUTH:-pkexec --keep-cwd} "${BASH_SOURCE[0]}" "${orig_argv[@]}"
+fi
+
+# Resolve symbolic link to local repository
+db_path=$(realpath -e -- "$db_root/$db_name".db)
+
+# Types of dependencies that will be installed before the build.
+deptypes=('depends' 'makedepends')
+(( checkdepends )) && deptypes+=('checkdepends')
+
+# If a queue file is specified, use it for reading targets. Otherwise, default
+# to the current directory.
+if [[ -v queue ]]; then
+    exec {fd}< "$queue"
+elif [[ ! -f $queue ]]; then
+    printf >&2 "%s: arg file '%s' not found\n" "$argv0" "$queue"
+    exit 2
+else
+    exec {fd}< <(echo $PWD)
+fi
+
+# A trap is defined here so that when build-asroot is interrupted, any installed
+# dependencies are removed. This behavior matches makepkg --rmdeps.
+unset remove_args install_args
+# XXX: when interrupting a pactrans interaction (i.e. for removing/installing
+# dependencies) with SIGINT, the pacman database remains locked
+trap 'remove_depends; paclock --unlock' EXIT
+
+while IFS= read -ru "$fd" path; do
+    cd -- "$startdir"
+    [[ $path ]] && cd -- "$path"
+
+    # Retrieve dependencies as build user with makepkg --printsrcinfo. Alternatively,
+    # dependencies can be retrieved directly from .SRCINFO, in cases where it
+    # matches the PKGBUILD exactly (AUR packages with no local changes).
+    depends=()
+    while IFS='=' read -r key val; do
+        depends+=("${val## }")
+    done < <(pacini .SRCINFO "${deptypes[@]}")
+    wait "$!"
+
+    # Check which dependencies are missing on the host.
+    mapfile -t depends_missing < <(pacman -T "${depends[@]}")
+
+    # Precomputing the transaction allows to undo it later in reverse order.
+    # In particular, dependencies are installed and removed in a single transaction.
+    # Semantics are defined by the `--resolve-conflicts` and `--resolve-replacements`
+    # options for `pactrans`.
+    while read -r type package _; do
+        if [[ $type == "removing" ]]; then
+            remove_args+=("${package##local/}")
+        elif [[ $type == "installing" ]]; then
+            install_args+=("$package")
+        fi
+    done < <(get_transaction "${depends_missing[@]}")
+    wait "$!"
+
+    # Install/remove dependencies in a single transaction
+    install_depends
+
+    # Privileges are now dropped to a regular user to build the package. It is
+    # assumed that this user has at least read access to the PKGBUILD. If the
+    # PKGBUILD has a `pkgver()` function, write access is also needed.
+    makepkg_ret=0
+    as_user PKGDEST="$db_root" makepkg "${makepkg_args[@]}" || makepkg_ret=$?
+
+    # A direct invocation of `makepkg` has a wide range of exit codes (see
+    # /usr/share/makepkg/util/error.sh). `13` means a package in `PKGDEST` is
+    # already available. Note that `makepkg --sign` will not create a new
+    # signature in such a case.
+    case $makepkg_ret in
+        13) continue ;; # $E_ALREADY_BUILT
+         0) ;; # success
+         *) exit "$makepkg_ret" ;; # general error
+    esac
+
+    # Perform dependency transaction in reverse order.
+    # Note: the install reason for removed packages is not preserved.
+    # XXX: only remove packages that were installed by install_depends
+    # (installation of retrieved targets may be aborted by the user)
+    remove_depends
+    unset install_args remove_deps
+
+    # Retrieve paths to built packages. To avoid linting the PKGBUILD a second
+    # time, `aur-build--pkglist` is preferred over `makepkg --packagelist`.
+    mapfile -t pkglist < <(as_user PKGDEST="$db_root" aur build--pkglist)
+    wait "$!"
+
+    # When debug is enabled in makepkg.conf, `makepkg --packagelist` will always
+    # print a debug package, even when one will not be created by makepkg. As
+    # such any file paths have to be checked for existence.
+    pkglist_effective=()
+    for p in "${pkglist[@]}"; do
+        [[ -f $p ]] && pkglist_effective+=("$p")
+    done
+
+    # update local repository
+    as_user env -C "$db_root" repo-add "${repo_add_args[@]}" "$db_path" "${pkglist_effective[@]}"
+
+    # update host and pacman database
+    pacsync "$db_name"
+    pacsync "$db_name" --dbext=.files
+
+    # update packages installed from the local repository
+    pactrans --sysupgrade --resolve-replacements=none --no-confirm --config <(
+        printf '%s\n' '[options]'
+        pacconf --raw --options
+
+        printf '%s\n' "[$db_name]"
+        pacconf --raw --repo="$db_name"
+    )
+    wait "$!"
+done
+
+exec {fd}<&-
