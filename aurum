@@ -8,10 +8,10 @@ argv0=maid
 build_args=(-R) sync_args=(--format=log)
 
 # default options
-checkdepends=1 use_mirror=0
+checkdepends=1 use_mirror=1
 
 usage() {
-    echo "usage: $argv0 [-d ARG] [-ufCeM] [--] ARGS..."
+    echo "usage: $argv0 [-d ARG] [-ufCe] [--] ARGS..."
     exit 2
 }
 
@@ -45,8 +45,8 @@ while true; do
             sync_args+=(-u) ;;
         --ignore)
             shift; sync_args+=(--ignore "$1") ;;
-        -M|--mirror)
-            use_mirror=1 ;;
+        --no-mirror)
+            use_mirror=0 ;;
         --) shift; break ;;
     esac
     shift
