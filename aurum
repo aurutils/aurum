@@ -1,6 +1,5 @@
 #!/bin/bash
 [[ -v AUR_DEBUG ]] && set -o xtrace
-set -o errexit
 XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
 XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 argv0=maid
@@ -69,16 +68,16 @@ fi
   IFS=: read -r _ db_root
   IFS=: read -r _ _
 } < <(aur repo "${repo_args[@]}" --status)
-wait "$!"
+wait "$!" || exit
 
 # retrieve and inspect sources
 env AUR_PAGER=view-delta AUR_SYNC_USE_NINJA=0 aur sync \
     --database "$db_name" --root "$db_root" "${sync_args[@]}" --no-build "$@" \
-    --exclude ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix > "$tmp"
+    --exclude ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix > "$tmp" || exit
 
 # build packages in dependency order
 # XXX: add ninja support
 if [[ -s $tmp ]]; then
     build_args+=(-d "$db_name" -r "$db_root" -a "$tmp" -U "$USER")
-    build-asroot "${build_args[@]}"
+    build-asroot "${build_args[@]}" || exit
 fi
