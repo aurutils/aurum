@@ -2,13 +2,20 @@
 [[ -v AUR_DEBUG ]] && set -o xtrace
 XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
 XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
-argv0=aurum
+readonly argv0=aurum
+readonly version='AURUM_VERSION'
+readonly lib_dir=${AURUM_EXEC_PATH:-'AURUM_LIB_DIR'}
+
+# append utilities to PATH
+if [[ "$PATH" != "$lib_dir:"* ]]; then
+    readonly PATH=$lib_dir:$PATH
+fi
 
 # default arguments
 build_args=(-R) sync_args=(--format=log)
 
 # default options
-checkdepends=1 use_mirror=1
+use_mirror=1 info_only=0 search_only=0 fetch_only=0
 
 usage() {
     echo "usage: $argv0 [-d ARG] [-ufCe] [--] ARGS..."
@@ -18,9 +25,9 @@ usage() {
 source /usr/share/makepkg/util/parseopts.sh
 
 # option parsing
-opt_short='d:ufCeMn'
+opt_short='ufFCeMnis'
 opt_long=('repo:' 'upgrades' 'force' 'no-check' 'nocheck' 'continue' 'mirror'
-          'noconfirm' 'no-confirm' 'ignore:')
+          'noconfirm' 'no-confirm' 'ignore:' 'search' 'info' 'fetch')
 
 if ! parseopts "$opt_short" "${opt_long[@]}" -- "$@"; then
     usage
@@ -30,7 +37,14 @@ set -- "${OPTRET[@]}"
 unset repo_args sync_args
 while true; do
     case $1 in
-        -d|--repo)
+        -i|--info)
+            info_only=1 ;;
+        -s|--search)
+            search_only=1 ;;
+        # XXX: interoperability with -S (cf. pkgbuilder -SF)
+        -F|--fetch)
+            fetch_only=1 ;;
+        --repo)
             shift; repo_args+=(-d "$1") ;;
         -f|--force)
             build_args+=(-f); sync_args+=(-f --no-ver-argv) ;;
@@ -38,6 +52,7 @@ while true; do
             build_args+=(-C); sync_args+=(--no-check) ;;
         -n|--noconfirm|--no-confirm)
             build_args+=(-n) ;;
+        # XXX: replace with -X, --runtx
         -e|--continue)
             sync_args+=(--continue) ;;
         -u|--upgrades)
@@ -54,6 +69,14 @@ done
 if (( use_mirror )); then
     export AURDEST=$XDG_CACHE_HOME/aurutils/sync-mirror
     export AUR_FETCH_USE_MIRROR=1
+fi
+
+if (( search_only )); then
+    aur search "$@"
+elif (( info_only )); then
+    aur search --info "$@"
+elif (( fetch_only )); then
+    :
 fi
 
 # set up scratch space
