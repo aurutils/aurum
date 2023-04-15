@@ -76,10 +76,13 @@ fi
 
 if (( search_only )); then
     aur search "$@"
+    exit
 elif (( info_only )); then
     aur search --info "$@"
+    exit
 elif (( fetch_only )); then
-    :
+    printf >&2 '%s\n' '%s: function not implemented\n' "$argv0"
+    exit 38
 fi
 
 # set up scratch space
