@@ -9,7 +9,7 @@ ifeq ($(AURUM_VERSION),)
 AURUM_VERSION := 0.1
 endif
 
-.PHONY: aurum shellcheck install
+.PHONY: shellcheck install aurum
 
 aurum: aurum.in
 	sed -e 's|AURUM_LIB_DIR|$(AURUM_LIB_DIR)|' \
@@ -20,7 +20,7 @@ shellcheck:
 
 install: aurum
 	@install -Dm755 '$(PROGNM)' -t '$(DESTDIR)$(BINDIR)'
-	@install -Dm755 util/*      -t '$(DESTDIR)$(AURUM_LIB_DIR)'
+	@install -Dm755 lib/*       -t '$(DESTDIR)$(AURUM_LIB_DIR)'
 	@install -Dm644 man1/*      -t '$(DESTDIR)$(SHRDIR)/man/man1'
 	@install -Dm644 LICENSE     -t '$(DESTDIR)$(SHRDIR)/licenses/$(PROGNM)'
 	@install -Dm644 README.md   -t '$(DESTDIR)$(SHRDIR)/doc/$(PROGNM)'
