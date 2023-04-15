@@ -12,19 +12,22 @@ if [[ "$PATH" != "$lib_dir:"* ]]; then
 fi
 
 # default arguments
-build_args=(-R) sync_args=(--format=log)
+build_args=(-R)
+sync_args=(--format=log)
 
 # default options
-use_mirror=1 info_only=0 search_only=0 fetch_only=0
+fetch_only=0
+info_only=0
+search_only=0
+use_mirror=1
 
 usage() {
     echo "usage: $argv0 [-d ARG] [-ufCe] [--] ARGS..."
     exit 2
 }
 
-source /usr/share/makepkg/util/parseopts.sh
-
 # option parsing
+source /usr/share/makepkg/util/parseopts.sh || exit
 opt_short='ufFCeMnis'
 opt_long=('repo:' 'upgrades' 'force' 'no-check' 'nocheck' 'continue' 'mirror'
           'noconfirm' 'no-confirm' 'ignore:' 'search' 'info' 'fetch')
