@@ -2,7 +2,7 @@
 pkgname=aurum-git
 pkgver=0.1
 pkgrel=1
-pkgdesc='high-level wrapper for aurum with extra features'
+pkgdesc='high-level wrapper for aurutils with extra features'
 url='https://github.com/AladW/aurum'
 arch=('any')
 license=('custom:ISC')
