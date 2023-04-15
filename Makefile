@@ -18,7 +18,7 @@ aurum: aurum.in
 shellcheck:
 	@shellcheck -x -f gcc -e 1071 '$(PROGNM)'
 
-install:
+install: aurum
 	@install -Dm755 '$(PROGNM)' -t '$(DESTDIR)$(BINDIR)'
 	@install -Dm755 util/*      -t '$(DESTDIR)$(AURUM_LIB_DIR)'
 	@install -Dm644 man1/*      -t '$(DESTDIR)$(SHRDIR)/man/man1'
