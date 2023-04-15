@@ -126,7 +126,8 @@ fi
 unset remove_args install_args
 # XXX: when interrupting a pactrans interaction (i.e. for removing/installing
 # dependencies) with SIGINT, the pacman database remains locked
-trap 'remove_depends; paclock --unlock' EXIT
+trap 'remove_depends' EXIT
+trap 'paclock --unlock; exit' INT
 
 while IFS= read -ru "$fd" path; do
     cd -- "$startdir"
