@@ -61,6 +61,7 @@ remove_depends() {
 }
 
 # Simple option parsing
+# XXX: switch to getopt/parseopts for long options
 unset queue build_user db_name db_root
 orig_argv=("$@")
 
@@ -114,6 +115,7 @@ deptypes=('depends' 'makedepends')
 # to the current directory.
 if [[ -v queue ]]; then
     exec {fd}< "$queue"
+
 elif [[ ! -f $queue ]]; then
     printf >&2 "%s: arg file '%s' not found\n" "$argv0" "$queue"
     exit 2

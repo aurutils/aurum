@@ -2,24 +2,29 @@
 [[ -v AUR_DEBUG ]] && set -o xtrace
 XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
 XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
+XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
+XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
 readonly argv0=aurum
 readonly version='AURUM_VERSION'
 readonly lib_dir=${AURUM_EXEC_PATH:-'AURUM_LIB_DIR'}
 
-# append utilities to PATH
+# append utilities to PATH (propagates to external commands like ninja)
 if [[ "$PATH" != "$lib_dir:"* ]]; then
     readonly PATH=$lib_dir:$PATH
 fi
 
 # default arguments
 build_args=(-R)
+fetch_args=()
 sync_args=(--format=log)
 
 # default options
 fetch_only=0
 info_only=0
 search_only=0
+view_only=0
 use_mirror=1
+use_ninja=0  # TODO: enable ninja by default when implemented
 
 usage() {
     echo "usage: $argv0 [-d ARG] [-ufCe] [--] ARGS..."
@@ -28,34 +33,48 @@ usage() {
 
 # option parsing
 source /usr/share/makepkg/util/parseopts.sh || exit
-opt_short='ufFCeMnis'
-opt_long=('repo:' 'upgrades' 'force' 'no-check' 'nocheck' 'continue' 'mirror'
-          'noconfirm' 'no-confirm' 'ignore:' 'search' 'info' 'fetch')
+
+opt_short='C:k:ufFeMnisSw'
+opt_long=('repo:' 'upgrades' 'force' 'continue' 'mirror' 'no-check' 'no-confirm'
+          'no-ninja' 'keep-going:' 'chdir:' 'ignore:' 'search' 'info' 'fetch'
+          'merge' 'rebase' 'reset' 'ff')
 
 if ! parseopts "$opt_short" "${opt_long[@]}" -- "$@"; then
     usage
 fi
 set -- "${OPTRET[@]}"
 
-unset repo_args sync_args
+# TODO: --init, --margs, -R/--remove (aur-remove), --gc (aur-gc), -D/--vcsupgrade,
+# --fm (vifm), --rebuild (sync-rebuild), --no-ver, --discard
+unset repo_args sync_args build_dir
 while true; do
     case $1 in
         -i|--info)
             info_only=1 ;;
         -s|--search)
             search_only=1 ;;
-        # XXX: interoperability with -S (cf. pkgbuilder -SF)
+        # XXX: -S/--sync as special case of -C "$AURDEST" -F (pkgbuilder)
         -F|--fetch)
             fetch_only=1 ;;
+        # XXX: long option (pacman -w/--downloadonly)
+        -w)
+            view_only=1 ;;
+        -C|--chdir)
+            shift; build_dir=$1 ;;
         --repo)
             shift; repo_args+=(-d "$1") ;;
+        # XXX: --merge, --auto are exclusive aur-fetch arguments
+        --merge)
+            fetch_args+=("$1") ;;
+        --rebase|--reset|--ff)
+            fetch_args+=("$1"); sync_args+=("$1") ;;
         -f|--force)
             build_args+=(-f); sync_args+=(-f --no-ver-argv) ;;
-        -C|--nocheck|--no-check)
-            build_args+=(-C); sync_args+=(--no-check) ;;
-        -n|--noconfirm|--no-confirm)
+        -n|--no-confirm)
             build_args+=(-n) ;;
-        # XXX: replace with -X, --runtx
+        --no-check)
+            build_args+=(--no-check); sync_args+=(--no-check) ;;
+        # XXX: replace with -X, --runtx (pkgbuilder)
         -e|--continue)
             sync_args+=(--continue) ;;
         -u|--upgrades)
@@ -64,29 +83,54 @@ while true; do
             shift; sync_args+=(--ignore "$1") ;;
         --no-mirror)
             use_mirror=0 ;;
+        --no-ninja)
+            use_ninja=0 ;;
         --) shift; break ;;
     esac
     shift
 done
 
+# use separate source directories for --mirror by default
 if (( use_mirror )); then
-    export AURDEST=$XDG_CACHE_HOME/aurutils/sync-mirror
+    export AURDEST=${AURDEST:-$XDG_CACHE_HOME/aurutils/sync-mirror}
     export AUR_FETCH_USE_MIRROR=1
+else
+    export AURDEST=${AURDEST:-$XDG_CACHE_HOME/aurutils/sync}
+    export AUR_FETCH_USE_MIRROR=0
 fi
 
+if [[ -v build_dir ]] && cd -- "$build_dir"; then
+    # command-line directory takes precedence over AURDEST/--mirror
+    # XXX: if build_dir is unset, cd -- "$AURDEST" is not run
+    export AURDEST=$build_dir
+
+elif [[ -v build_dir ]]; then
+    exit 1
+fi
+
+# exclusive modes
 if (( search_only )); then
     aur search "$@"
-    exit
+    exit $?
+
 elif (( info_only )); then
     aur search --info "$@"
-    exit
+    exit $?
+
 elif (( fetch_only )); then
-    printf >&2 '%s\n' '%s: function not implemented\n' "$argv0"
-    exit 38
+    aur fetch --recurse "${fetch_args[@]}" "$@"
+    exit $?
+
+elif (( view_only )); then
+    # XXX: let aur-view evaluate AUR_CONFIRM_PAGER(=0)
+    unset AUR_CONFIRM_PAGER
+else
+    export AUR_CONFIRM_PAGER=1
 fi
 
 # set up scratch space
-tmp=$(mktemp)
+tmp=$(mktemp -d --tmpdir "aurum-$UID.XXXXXXXX")
+
 if [[ ! -v AUR_DEBUG ]]; then
     trap 'rm -rf "$tmp"' EXIT
 fi
@@ -98,14 +142,42 @@ fi
 } < <(aur repo "${repo_args[@]}" --status)
 wait "$!" || exit
 
-# retrieve and inspect sources
-env AUR_PAGER=view-delta AUR_SYNC_USE_NINJA=0 aur sync \
-    --database "$db_name" --root "$db_root" "${sync_args[@]}" --no-build "$@" \
-    --exclude ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix > "$tmp" || exit
+# retrieve and inspect sources in AURDEST
+# XXX: --no-build contains absolute paths, --columns only package names
+env AUR_PAGER=view-delta aur sync --no-build "${sync_args[@]}" "$@" \
+    --database "$db_name"    --root    "$db_root" \
+    --exclude  ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix >"$tmp"/queue || exit
+
+# skip build-asroot with -o/--no-build
+if (( view_only )); then
+    # XXX: skip confirmation prompt with view_only
+    cat >&2 "$tmp"/queue
+    exit 0
+
+elif  [[ ! -s $tmp/queue ]]; then
+    exit 0
+fi
 
 # build packages in dependency order
-# XXX: add ninja support
-if [[ -s $tmp ]]; then
-    build_args+=(-d "$db_name" -r "$db_root" -a "$tmp" -U "$USER")
-    build-asroot "${build_args[@]}" || exit
+# XXX: ninja support copied from aur-sync, move to seperate helper/util
+build_args+=(-d "$db_name" -r "$db_root" -U "$USER")
+
+if (( use_ninja )); then
+    printf >&2 '%s: function not implemented\n' "$argv0"
+    exit 38
+    # mkdir -p -- "$XDG_STATE_HOME"/$argv0
+
+    # ninja_dir=$XDG_STATE_HOME/$argv0/ninja-$USER-$$
+    # mkdir -- "$ninja_dir"
+
+    # # generate build.ninja
+    # cd -- "$ninja_dir"
+    # # XXX: build.ninja does not run outside `aurum` (AURUM_LIB_DIR set in PATH)
+    # aur sync--ninja "$AURDEST" <"$tmp" >build.ninja -- build-asroot "${build_args[@]}"
+
+    # TODO: ninja -k ...
+else
+    # XXX: dependency order is recomputed
+    #tsort "$tmp"/graph >"$tmp"/queue
+    build-asroot "${build_args[@]}" -a "$tmp"/queue || exit
 fi

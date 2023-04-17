@@ -6,7 +6,7 @@ LIBDIR ?= $(PREFIX)/lib
 AURUM_LIB_DIR ?= $(LIBDIR)/$(PROGNM)
 AURUM_VERSION ?= $(shell git describe --tags || true)
 ifeq ($(AURUM_VERSION),)
-AURUM_VERSION := 0.1
+AURUM_VERSION := 0.2
 endif
 
 .PHONY: shellcheck install aurum

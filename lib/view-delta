@@ -27,6 +27,3 @@ if (( ${#pkgbases[@]} )); then
     find -L "${pkgbases[@]}" -prune -exec sh -c 'git -C {} ls-files -z | env -C {} xargs -0r realpath -z' \; |
         grep -Ezv '.SRCINFO|.gitignore' | xargs -0r bat --paging=always
 fi >&2
-
-# Show an exit prompt
-read -rp $'Press Return to continue or Ctrl+d to abort\n'
