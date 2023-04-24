@@ -108,8 +108,10 @@ fi
 db_path=$(realpath -e -- "$db_root/$db_name".db)
 
 # Types of dependencies that will be installed before the build.
-deptypes=('depends' 'makedepends')
-(( checkdepends )) && deptypes+=('checkdepends')
+deptypes=(-v 'DEPENDS=1' -v 'MAKEDEPENDS=1')
+if (( checkdepends )); then
+    deptypes+=(-v 'CHECKDEPENDS'=1)
+fi
 
 # If a queue file is specified, use it for reading targets. Otherwise, default
 # to the current directory.
@@ -135,13 +137,15 @@ while IFS= read -ru "$fd" path; do
     cd -- "$startdir"
     [[ $path ]] && cd -- "$path"
 
-    # Retrieve dependencies as build user with makepkg --printsrcinfo. Alternatively,
-    # dependencies can be retrieved directly from .SRCINFO, in cases where it
-    # matches the PKGBUILD exactly (AUR packages with no local changes).
+    # Retrieve dependencies directly from .SRCINFO, assuming it matches PKGBUILD
+    # metadata exactly (AUR packages with no local changes). Alternatively,
+    # `makepkg --printsrcinfo` can be run as the build user.
     depends=()
-    while IFS='=' read -r key val; do
-        depends+=("${val## }")
-    done < <(pacini .SRCINFO "${deptypes[@]}")
+    while read -r pkgbase dep; do
+        printf >&2 $pkgbase $dep
+        depends+=("$dep")
+    # Only retrieve global make/depends from a split package as build dependencies.
+    done < <(aur graph -v PRINTALL=1 "${deptypes[@]}" .SRCINFO)
     wait "$!"
 
     # Check which dependencies are missing on the host.
@@ -154,6 +158,7 @@ while IFS= read -ru "$fd" path; do
     while read -r type package _; do
         if [[ $type == "removing" ]]; then
             remove_args+=("${package##local/}")
+
         elif [[ $type == "installing" ]]; then
             install_args+=("$package")
         fi
