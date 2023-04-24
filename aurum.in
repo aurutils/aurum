@@ -26,6 +26,7 @@ view_only=0
 upgrades=0
 use_mirror=1
 use_ninja=0  # TODO: enable ninja by default when implemented
+use_default_fm=0
 
 usage() {
     echo "usage: $argv0 [-d ARG] [-ufCe] [--] ARGS..."
@@ -38,7 +39,7 @@ source /usr/share/makepkg/util/parseopts.sh || exit
 opt_short='C:k:ufFeMnisSw'
 opt_long=('repo:' 'upgrades' 'force' 'continue' 'mirror' 'no-check' 'no-confirm'
           'no-ninja' 'keep-going:' 'chdir:' 'ignore:' 'search' 'info' 'fetch'
-          'merge' 'rebase' 'reset' 'ff')
+          'merge' 'rebase' 'reset' 'ff' 'fm')
 
 if ! parseopts "$opt_short" "${opt_long[@]}" -- "$@"; then
     usage
@@ -46,7 +47,7 @@ fi
 set -- "${OPTRET[@]}"
 
 # TODO: --init, --margs, -R/--remove (aur-remove), --gc (aur-gc), -D/--vcsupgrade,
-# --fm (vifm), --rebuild (sync-rebuild), --no-ver, --discard, --foreign, --upgrades, --print
+# --rebuild (sync-rebuild), --no-ver, --discard, --foreign, --upgrades, --print
 unset repo_args sync_args build_dir
 while true; do
     case $1 in
@@ -84,6 +85,8 @@ while true; do
             use_mirror=0 ;;
         --no-ninja)
             use_ninja=0 ;;
+        --fm)
+            use_default_fm=1 ;;
         --) shift; break ;;
     esac
     shift
@@ -100,6 +103,12 @@ if (( use_mirror )); then
 else
     export AURDEST=${AURDEST:-$XDG_CACHE_HOME/aurutils/sync}
     export AUR_FETCH_USE_MIRROR=0
+fi
+
+if (( use_default_fm )); then
+    unset AUR_PAGER
+else
+    export AUR_PAGER=${AUR_PAGER:-view-delta}
 fi
 
 if [[ -v build_dir ]] && cd -- "$build_dir"; then
@@ -153,7 +162,7 @@ fi
 
 # retrieve and inspect sources in AURDEST
 # XXX: --no-build contains absolute paths, --columns only package names
-env AUR_PAGER=view-delta aur sync --no-build "${sync_args[@]}" "$@" \
+aur sync --no-build "${sync_args[@]}" "$@" \
     --database "$db_name"    --root    "$db_root" \
     --exclude  ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix >"$tmp"/queue || exit
 
