@@ -23,6 +23,7 @@ fetch_only=0
 info_only=0
 search_only=0
 view_only=0
+upgrades=0
 use_mirror=1
 use_ninja=0  # TODO: enable ninja by default when implemented
 
@@ -45,7 +46,7 @@ fi
 set -- "${OPTRET[@]}"
 
 # TODO: --init, --margs, -R/--remove (aur-remove), --gc (aur-gc), -D/--vcsupgrade,
-# --fm (vifm), --rebuild (sync-rebuild), --no-ver, --discard
+# --fm (vifm), --rebuild (sync-rebuild), --no-ver, --discard, --foreign, --upgrades, --print
 unset repo_args sync_args build_dir
 while true; do
     case $1 in
@@ -53,7 +54,6 @@ while true; do
             info_only=1 ;;
         -s|--search)
             search_only=1 ;;
-        # XXX: -S/--sync as special case of -C "$AURDEST" -F (pkgbuilder)
         -F|--fetch)
             fetch_only=1 ;;
         # XXX: long option (pacman -w/--downloadonly)
@@ -63,7 +63,6 @@ while true; do
             shift; build_dir=$1 ;;
         --repo)
             shift; repo_args+=(-d "$1") ;;
-        # XXX: --merge, --auto are exclusive aur-fetch arguments
         --merge)
             fetch_args+=("$1") ;;
         --rebase|--reset|--ff)
@@ -89,6 +88,10 @@ while true; do
     esac
     shift
 done
+
+if (( ! $# )); then
+    usage
+fi
 
 # use separate source directories for --mirror by default
 if (( use_mirror )); then
@@ -117,7 +120,7 @@ elif (( info_only )); then
     aur search --info "$@"
     exit $?
 
-elif (( fetch_only )); then
+elif (( fetch_only )) && (( ! upgrades )); then
     aur fetch --recurse "${fetch_args[@]}" "$@"
     exit $?
 
@@ -141,6 +144,12 @@ fi
   IFS=: read -r _ _
 } < <(aur repo "${repo_args[@]}" --status)
 wait "$!" || exit
+
+# retrieve sources for upgrades (-Fu)
+if (( fetch_only )) && (( upgrades )); then
+    aur repo -d "$db_name" -u | aur fetch "${fetch_args[@]}" /dev/stdin
+    exit $?
+fi
 
 # retrieve and inspect sources in AURDEST
 # XXX: --no-build contains absolute paths, --columns only package names
