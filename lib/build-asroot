@@ -142,7 +142,6 @@ while IFS= read -ru "$fd" path; do
     # `makepkg --printsrcinfo` can be run as the build user.
     depends=()
     while read -r pkgbase dep; do
-        printf >&2 $pkgbase $dep
         depends+=("$dep")
     # Only retrieve global make/depends from a split package as build dependencies.
     done < <(aur graph -v PRINTALL=1 "${deptypes[@]}" .SRCINFO)
