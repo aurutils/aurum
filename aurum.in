@@ -108,7 +108,7 @@ fi
 if (( use_default_fm )); then
     unset AUR_PAGER
 else
-    export AUR_PAGER=${AUR_PAGER:-view-delta}
+    export AUR_PAGER=${AUR_PAGER:-aurum-view-delta}
 fi
 
 if [[ -v build_dir ]] && cd -- "$build_dir"; then
@@ -197,5 +197,5 @@ if (( use_ninja )); then
 else
     # XXX: dependency order is recomputed
     #tsort "$tmp"/graph >"$tmp"/queue
-    build-asroot "${build_args[@]}" -a "$tmp"/queue || exit
+    aurum-build-asroot "${build_args[@]}" -a "$tmp"/queue || exit
 fi
