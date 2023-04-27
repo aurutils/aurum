@@ -37,9 +37,9 @@ usage() {
 source /usr/share/makepkg/util/parseopts.sh || exit
 
 opt_short='C:k:ufFeMnisSw'
-opt_long=('repo:' 'upgrades' 'force' 'continue' 'mirror' 'no-check' 'no-confirm'
-          'no-ninja' 'keep-going:' 'chdir:' 'ignore:' 'search' 'info' 'fetch'
-          'merge' 'rebase' 'reset' 'ff' 'fm')
+opt_long=('repo:' 'upgrades' 'force' 'continue' 'mirror' 'no-check'
+    'no-confirm' 'no-ninja' 'no-provides' 'keep-going:' 'chdir:' 'ignore:'
+    'search' 'info' 'fetch' 'merge' 'rebase' 'reset' 'ff' 'fm')
 
 if ! parseopts "$opt_short" "${opt_long[@]}" -- "$@"; then
     usage
@@ -81,6 +81,8 @@ while true; do
             sync_args+=(-u) ;;
         --ignore)
             shift; sync_args+=(--ignore "$1") ;;
+        --no-provides)
+            sync_args+=(--no-provides) ;;
         --no-mirror)
             use_mirror=0 ;;
         --no-ninja)
