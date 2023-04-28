@@ -30,7 +30,8 @@ as_user() {
 
 # Save transaction so that it can easily be undone later. `pactrans` ignores
 # `provides` or groups, so these are resolved with `pacman -Sp` first.  This
-# implies no provider selection; default targets are always taken.
+# implies no provider selection; default targets are always taken. Conversely,
+# `pacman` has no provider selection when used with `-p`, unlike `pactrans`.
 # See: https://github.com/andrewgregory/pacutils/issues/63
 get_transaction() {
     (( ! $# )) && return
@@ -138,11 +139,11 @@ while IFS= read -ru "$fd" path; do
     [[ $path ]] && cd -- "$path"
 
     # Retrieve dependencies directly from .SRCINFO, assuming it matches PKGBUILD
-    # metadata exactly (AUR packages with no local changes). Alternatively,
-    # `makepkg --printsrcinfo` can be run as the build user.
+    # metadata exactly (AUR packages with no local changes). Alternatively, the
+    # PKGBUILD can be sourced as the build user.
     depends=()
     while read -r pkgbase dep; do
-        depends+=("$dep")
+        [[ $dep != "$pkgbase" ]] && depends+=("$dep")
     # Only retrieve global make/depends from a split package as build dependencies.
     done < <(aur graph -v PRINTALL=1 "${deptypes[@]}" .SRCINFO)
     wait "$!"
