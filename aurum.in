@@ -78,7 +78,7 @@ while true; do
         -e|--continue)
             sync_args+=(--continue) ;;
         -u|--upgrades)
-            sync_args+=(-u) ;;
+            upgrades=1; sync_args+=(-u) ;;
         --ignore)
             shift; sync_args+=(--ignore "$1") ;;
         --no-provides)
@@ -94,7 +94,7 @@ while true; do
     shift
 done
 
-if (( ! $# )); then
+if ! (( $# + upgrades )); then
     usage
 fi
 
