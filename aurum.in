@@ -27,6 +27,7 @@ upgrades=0
 use_mirror=1
 use_ninja=0  # TODO: enable ninja by default when implemented
 use_default_fm=0
+use_dialog=1
 
 usage() {
     echo "usage: $argv0 [-d ARG] [-ufCe] [--] ARGS..."
@@ -39,7 +40,7 @@ source /usr/share/makepkg/util/parseopts.sh || exit
 opt_short='C:k:ufFeMnisSw'
 opt_long=('repo:' 'upgrades' 'force' 'continue' 'mirror' 'no-check'
     'no-confirm' 'no-ninja' 'no-provides' 'keep-going:' 'chdir:' 'ignore:'
-    'search' 'info' 'fetch' 'merge' 'rebase' 'reset' 'ff' 'fm')
+    'search' 'info' 'fetch' 'merge' 'rebase' 'reset' 'ff' 'fm' 'no-dialog')
 
 if ! parseopts "$opt_short" "${opt_long[@]}" -- "$@"; then
     usage
@@ -87,6 +88,8 @@ while true; do
             use_mirror=0 ;;
         --no-ninja)
             use_ninja=0 ;;
+        --no-dialog)
+            use_dialog=0 ;;
         --fm)
             use_default_fm=1 ;;
         --) shift; break ;;
@@ -134,12 +137,6 @@ elif (( info_only )); then
 elif (( fetch_only )) && (( ! upgrades )); then
     aur fetch --recurse "${fetch_args[@]}" "$@"
     exit $?
-
-elif (( view_only )); then
-    # XXX: let aur-view evaluate AUR_CONFIRM_PAGER(=0)
-    unset AUR_CONFIRM_PAGER
-else
-    export AUR_CONFIRM_PAGER=1
 fi
 
 # set up scratch space
@@ -164,18 +161,30 @@ fi
 
 # retrieve and inspect sources in AURDEST
 # XXX: --no-build contains absolute paths, --columns only package names
-aur sync --no-build "${sync_args[@]}" "$@" \
+env -u AUR_CONFIRM_PAGER aur sync --no-build "${sync_args[@]}" "$@" \
     --database "$db_name"    --root    "$db_root" \
     --exclude  ':!*.SRCINFO' --exclude ':!*.gitignore' --prefix >"$tmp"/queue || exit
 
-# skip build-asroot with -o/--no-build
-if (( view_only )); then
-    # XXX: skip confirmation prompt with view_only
+if [[ ! -s $tmp/queue ]]; then
+    exit 0  # nothing to do (aur-sync -u with no available upgrades)
+
+elif (( view_only )); then
     cat >&2 "$tmp"/queue
     exit 0
 
-elif  [[ ! -s $tmp/queue ]]; then
-    exit 0
+# print summary and confirmation for build queue
+# if AUR_CONFIRM_PAGER=0 is set in the environment, respect it
+# TODO: implement --no-dialog override
+elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )); then
+    dialog_text=$(printf '%s\n' 'Continue with build process?' \
+        '─────────────────────────────────' \
+        "$(xargs -a "$tmp"/queue basename -a)")
+
+    if ! dialog --title 'aurum' --yesno "$dialog_text" 10 40; then
+        printf >&2 '%s: build process aborted by user' "$argv0"
+        exit 1
+    fi
+    clear  # remove dialog background
 fi
 
 # build packages in dependency order

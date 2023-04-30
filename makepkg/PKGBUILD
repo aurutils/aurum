@@ -1,6 +1,6 @@
 # Maintainer: Alad Wenter <https://github.com/AladW>
 pkgname=aurum-git
-pkgver=0.1
+pkgver=0.2.r7.g30fd27c
 pkgrel=1
 pkgdesc='high-level wrapper for aurutils with extra features'
 url='https://github.com/AladW/aurum'
@@ -11,7 +11,7 @@ changelog=aurum.changelog
 sha256sums=('SKIP')
 conflicts=('aurum')
 provides=("aurum=${pkgver%%.r*}")
-depends=('git' 'aurutils' 'bat' 'git-delta' 'ninja')
+depends=('git' 'aurutils' 'bat' 'git-delta' 'dialog')
 makedepends=('git')
 
 pkgver() {
