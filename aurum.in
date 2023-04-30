@@ -174,17 +174,20 @@ elif (( view_only )); then
 
 # print summary and confirmation for build queue
 # if AUR_CONFIRM_PAGER=0 is set in the environment, respect it
-# TODO: implement --no-dialog override
-elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )); then
+# if --no-dialog is supplied, use a regular `read` prompt
+elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )) && (( use_dialog )); then
     dialog_text=$(printf '%s\n' 'Continue with build process?' \
         '─────────────────────────────────' \
         "$(xargs -a "$tmp"/queue basename -a)")
 
     if ! dialog --title 'aurum' --yesno "$dialog_text" 10 40; then
-        printf >&2 '%s: build process aborted by user' "$argv0"
+        clear; printf >&2 '%s: build process aborted by user\n' "$argv0"
         exit 1
     fi
     clear  # remove dialog background
+
+elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )); then
+    read -rp $'Press Return to continue or Ctrl+d to abort\n' || exit
 fi
 
 # build packages in dependency order
