@@ -102,7 +102,7 @@ fi
 # XXX: only done so that `aur-build-asroot` can be resolved with `aur`,
 # without placing it in the global AUR_EXEC_PATH
 if (( EUID != 0 )); then
-    exec ${AUR_PACMAN_AUTH:-pkexec --keep-cwd} "${BASH_SOURCE[0]}" "${orig_argv[@]}"
+    exec ${AUR_PACMAN_AUTH:-sudo} "${BASH_SOURCE[0]}" "${orig_argv[@]}"
 fi
 
 # Resolve symbolic link to local repository
