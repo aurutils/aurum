@@ -38,7 +38,7 @@ usage() {
 source /usr/share/makepkg/util/parseopts.sh || exit
 
 opt_short='C:k:ufFeMnisSw'
-opt_long=('repo:' 'upgrades' 'force' 'continue' 'mirror' 'no-check'
+opt_long=('repo:' 'upgrades' 'force' 'continue' 'no-mirror' 'no-check'
     'no-confirm' 'no-ninja' 'no-provides' 'keep-going:' 'chdir:' 'ignore:'
     'search' 'info' 'fetch' 'merge' 'rebase' 'reset' 'ff' 'fm' 'no-dialog')
 
@@ -174,7 +174,6 @@ elif (( view_only )); then
 
 # print summary and confirmation for build queue
 # if AUR_CONFIRM_PAGER=0 is set in the environment, respect it
-# if --no-dialog is supplied, use a regular `read` prompt
 elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )) && (( use_dialog )); then
     dialog_text=$(printf '%s\n' 'Continue with build process?' \
         '─────────────────────────────────' \
@@ -186,6 +185,7 @@ elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )) && (( use_dialog ))
     fi
     clear  # remove dialog background
 
+# if --no-dialog is supplied, use a regular `read` prompt
 elif (( ! use_default_fm )) && (( ${AUR_CONFIRM_PAGER:-1} )); then
     read -rp $'Press Return to continue or Ctrl+d to abort\n' || exit
 fi
