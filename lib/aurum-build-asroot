@@ -111,7 +111,7 @@ db_path=$(realpath -e -- "$db_root/$db_name".db)
 # Types of dependencies that will be installed before the build.
 deptypes=(-v 'DEPENDS=1' -v 'MAKEDEPENDS=1')
 if (( checkdepends )); then
-    deptypes+=(-v 'CHECKDEPENDS'=1)
+    deptypes+=(-v 'CHECKDEPENDS=1')
 fi
 
 # If a queue file is specified, use it for reading targets. Otherwise, default
@@ -145,7 +145,7 @@ while IFS= read -ru "$fd" path; do
     while read -r pkgbase dep; do
         [[ $dep != "$pkgbase" ]] && depends+=("$dep")
     # Only retrieve global make/depends from a split package as build dependencies.
-    done < <(aur graph -v PRINTALL=1 "${deptypes[@]}" .SRCINFO)
+    done < <(as_user aur graph -v PRINTALL=1 "${deptypes[@]}" .SRCINFO)
     wait "$!"
 
     # Check which dependencies are missing on the host.
@@ -189,7 +189,7 @@ while IFS= read -ru "$fd" path; do
     # XXX: only remove packages that were installed by install_depends
     # (installation of retrieved targets may be aborted by the user)
     remove_depends
-    unset install_args remove_deps
+    unset install_args remove_args
 
     # Retrieve paths to built packages. To avoid linting the PKGBUILD a second
     # time, `aur-build--pkglist` is preferred over `makepkg --packagelist`.
